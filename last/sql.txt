@@ -1,0 +1,28 @@
+CREATE TABLE cart (
+    user_id VARCHAR(50) NOT NULL,
+    sku_id VARCHAR(50) NOT NULL,
+    quantity INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, sku_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO cart (user_id, sku_id, quantity) VALUES ('1001', 'sku1', 2);
+INSERT INTO cart (user_id, sku_id, quantity) VALUES ('1001', 'sku2', 1);
+
+CREATE TABLE product (
+    product_id VARCHAR(50) NOT NULL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO product (product_id, name, stock) VALUES ('1001', 'iPhone 13', 100);
+
+CREATE TABLE `order` (
+    order_id VARCHAR(50) NOT NULL PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    product_id VARCHAR(50) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `order` (order_id, user_id, product_id, quantity) VALUES ('order1001', '1001', '1001', 1);

@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: ecommerce-redis-demo
+  redis:
+    host: localhost
+    port: 6379
+    # password: your_redis_password # 如果有密码，请取消注释并填写
+    lettuce: # 使用 Lettuce 客户端连接池
+      pool:
+        max-active: 100        # 增加 Redis 连接池最大活动连接数，例如从 8 增加到 100
+        max-wait: -1           # 连接池没有可用连接时，等待的时间（-1 表示无限等待）
+        max-idle: 50           # 增加 Redis 连接池最大空闲连接数
+        min-idle: 10           # 增加 Redis 连接池最小空闲连接数
+  datasource:
+    url: jdbc:mysql://localhost:3306/nosql?useUnicode=true&characterEncoding=utf8&serverTimezone=GMT%2B8&useSSL=false
+    username: root
+    password: 1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari: # 使用 HikariCP 连接池的配置
+      maximum-pool-size: 50  # 增加数据库连接池最大连接数，例如从默认 10 增加到 50
+      minimum-idle: 10      # 增加数据库连接池最小空闲连接数
+      connection-timeout: 30000 # 连接超时时间 (毫秒)，默认 30 秒
+      idle-timeout: 600000    # 连接最大空闲时间 (毫秒)，默认 10 分钟
+      max-lifetime: 1800000   # 连接最大生命周期 (毫秒)，默认 30 分钟
+  jpa:
+    hibernate:
+      ddl-auto: update # 自动更新数据库表结构，生产环境建议设为 none 或 validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect # 根据你的 MySQL 版本选择
+
+# Tomcat/Jetty 内置服务器配置
+server:
+  tomcat:
+    threads:
+      max: 800              # 增加 Tomcat 的最大工作线程数，例如从默认 200 增加到 800
+    connection-timeout: 60000 # 连接超时时间 (毫秒)，可以适当增加，例如 60 秒
+    max-connections: 20000  # 最大连接数，包括已建立和等待中的连接
+    accept-count: 1000      # 接受连接队列的长度，当所有线程都在忙时，新连接会进入队列
