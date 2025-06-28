@@ -2,10 +2,14 @@ package com.example.ecommerceredisdemo.controller;
 
 import com.example.ecommerceredisdemo.service.FlashSaleService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/flash-sale")
+@Slf4j
 public class FlashSaleController {
 
     @Autowired
@@ -19,10 +23,20 @@ public class FlashSaleController {
      * @return 购买结果
      */
     @PostMapping("/purchase")
-    public String purchase(@RequestParam String userId,
+    public ResponseEntity<String> purchase(@RequestParam String userId,
                            @RequestParam String productId,
-                           @RequestParam int quantity) {
-        return flashSaleService.purchaseFlashSaleItem(userId, productId, quantity);
+                           @RequestParam(defaultValue = "1") int quantity) {
+        try {
+            String result = flashSaleService.purchaseFlashSaleItem(userId, productId, quantity);
+            if (result.contains("成功")) {
+                return ResponseEntity.ok(result);
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result);
+            }
+        } catch (Exception e) {
+            log.error("秒杀接口异常: /purchase", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("服务器内部错误，请稍后再试！");
+        }
     }
 
     /**

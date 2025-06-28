@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: ecommerce-redis-demo-test
+  redis:
+    cluster:
+      nodes:
+        - 192.168.231.4:7000
+        - 192.168.231.4:7001
+        - 192.168.231.5:7002
+        - 192.168.231.5:7003
+        - 192.168.231.6:7004
+        - 192.168.231.6:7005
+      max-redirects: 3
+    lettuce:
+      pool:
+        max-active: 50
+        max-wait: -1
+        max-idle: 20
+        min-idle: 5
+      cluster:
+        refresh:
+          adaptive: true
+          period: 30s
+  # 测试环境可以使用内存数据库
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    database-platform: org.hibernate.dialect.H2Dialect
+
+# 日志配置
+logging:
+  level:
+    com.example.ecommerceredisdemo: DEBUG
+    org.springframework.data.redis: DEBUG

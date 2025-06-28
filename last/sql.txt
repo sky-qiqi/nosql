@@ -1,28 +1,560 @@
-CREATE TABLE cart (
-    user_id VARCHAR(50) NOT NULL,
-    sku_id VARCHAR(50) NOT NULL,
-    quantity INT NOT NULL DEFAULT 0,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, sku_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO cart (user_id, sku_id, quantity) VALUES ('1001', 'sku1', 2);
-INSERT INTO cart (user_id, sku_id, quantity) VALUES ('1001', 'sku2', 1);
+-- =====================================================
+-- 电商系统 - 完整SQL脚本
+-- 版本: v1.0.0
+-- 创建时间: 2024-12-01
+-- 说明: 包含电商系统所需的所有SQL语句
+-- =====================================================
 
-CREATE TABLE product (
-    product_id VARCHAR(50) NOT NULL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    stock INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT INTO product (product_id, name, stock) VALUES ('1001', 'iPhone 13', 100);
+-- 设置字符集
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
 
+-- =====================================================
+-- 1. 创建数据库
+-- =====================================================
+CREATE DATABASE IF NOT EXISTS `nosql`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+-- 使用数据库
+USE `nosql`;
+
+-- =====================================================
+-- 2. 创建表结构
+-- =====================================================
+
+-- 创建商品表
+DROP TABLE IF EXISTS `product`;
+CREATE TABLE `product` (
+  `product_id` varchar(50) NOT NULL COMMENT '商品ID',
+  `name` varchar(200) NOT NULL COMMENT '商品名称',
+  `stock` int NOT NULL DEFAULT '0' COMMENT '库存数量',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`product_id`),
+  KEY `idx_name` (`name`),
+  KEY `idx_created_at` (`created_at`),
+  KEY `idx_product_stock` (`stock`),
+  KEY `idx_product_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品表';
+
+-- 创建购物车表
+DROP TABLE IF EXISTS `cart`;
+CREATE TABLE `cart` (
+  `user_id` varchar(50) NOT NULL COMMENT '用户ID',
+  `sku_id` varchar(50) NOT NULL COMMENT '商品SKU ID',
+  `quantity` int NOT NULL DEFAULT '1' COMMENT '商品数量',
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`user_id`,`sku_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_sku_id` (`sku_id`),
+  KEY `idx_cart_quantity` (`quantity`),
+  KEY `idx_cart_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车表';
+
+-- 创建商品库存变更日志表
+DROP TABLE IF EXISTS `product_stock_log`;
+CREATE TABLE `product_stock_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `product_id` varchar(50) NOT NULL COMMENT '商品ID',
+  `old_stock` int NOT NULL COMMENT '原库存数量',
+  `new_stock` int NOT NULL COMMENT '新库存数量',
+  `change_amount` int NOT NULL COMMENT '变更数量',
+  `operation` varchar(20) NOT NULL COMMENT '操作类型（增加/减少）',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_product_id` (`product_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品库存变更日志';
+
+-- 创建订单表
+DROP TABLE IF EXISTS `order`;
 CREATE TABLE `order` (
-    order_id VARCHAR(50) NOT NULL PRIMARY KEY,
-    user_id VARCHAR(50) NOT NULL,
-    product_id VARCHAR(50) NOT NULL,
-    quantity INT NOT NULL DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_user_id (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `order_id` varchar(50) NOT NULL COMMENT '订单ID',
+  `user_id` varchar(50) NOT NULL COMMENT '用户ID',
+  `product_id` varchar(50) NOT NULL COMMENT '商品ID',
+  `quantity` int NOT NULL DEFAULT '1' COMMENT '商品数量',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`order_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_product_id` (`product_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单表';
 
-INSERT INTO `order` (order_id, user_id, product_id, quantity) VALUES ('order1001', '1001', '1001', 1);
+-- =====================================================
+-- 3. 创建视图
+-- =====================================================
+
+-- 商品库存状态视图
+DROP VIEW IF EXISTS `v_product_stock`;
+CREATE VIEW `v_product_stock` AS
+SELECT 
+    product_id,
+    name,
+    stock,
+    CASE 
+        WHEN stock = 0 THEN '缺货'
+        WHEN stock <= 10 THEN '库存紧张'
+        WHEN stock <= 50 THEN '库存充足'
+        ELSE '库存充裕'
+    END AS stock_status,
+    created_at,
+    updated_at
+FROM product;
+
+-- 用户购物车统计视图
+DROP VIEW IF EXISTS `v_cart_summary`;
+CREATE VIEW `v_cart_summary` AS
+SELECT 
+    user_id,
+    COUNT(sku_id) AS item_count,
+    SUM(quantity) AS total_quantity,
+    MAX(updated_at) AS last_updated
+FROM cart
+GROUP BY user_id;
+
+-- 商品库存变更统计视图
+DROP VIEW IF EXISTS `v_stock_change_summary`;
+CREATE VIEW `v_stock_change_summary` AS
+SELECT 
+    product_id,
+    COUNT(*) AS change_count,
+    SUM(CASE WHEN operation = '增加' THEN change_amount ELSE 0 END) AS total_increase,
+    SUM(CASE WHEN operation = '减少' THEN ABS(change_amount) ELSE 0 END) AS total_decrease,
+    MAX(created_at) AS last_change_time
+FROM product_stock_log
+GROUP BY product_id;
+
+-- 热门商品视图
+DROP VIEW IF EXISTS `v_hot_products`;
+CREATE VIEW `v_hot_products` AS
+SELECT 
+    sku_id,
+    COUNT(DISTINCT user_id) AS user_count,
+    SUM(quantity) AS total_quantity,
+    AVG(quantity) AS avg_quantity
+FROM cart
+GROUP BY sku_id
+ORDER BY user_count DESC, total_quantity DESC;
+
+-- =====================================================
+-- 4. 创建存储过程
+-- =====================================================
+
+-- 更新商品库存存储过程
+DROP PROCEDURE IF EXISTS `sp_update_product_stock`;
+DELIMITER $$
+CREATE PROCEDURE `sp_update_product_stock`(
+    IN p_product_id VARCHAR(50),
+    IN p_stock_change INT
+)
+BEGIN
+    DECLARE current_stock INT DEFAULT 0;
+    DECLARE new_stock INT DEFAULT 0;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+    
+    START TRANSACTION;
+    
+    -- 获取当前库存
+    SELECT stock INTO current_stock 
+    FROM product 
+    WHERE product_id = p_product_id;
+    
+    -- 检查商品是否存在
+    IF current_stock IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '商品不存在';
+    END IF;
+    
+    -- 计算新库存
+    SET new_stock = current_stock + p_stock_change;
+    
+    -- 检查库存是否足够
+    IF new_stock < 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '库存不足，无法扣减';
+    END IF;
+    
+    -- 更新库存
+    UPDATE product 
+    SET stock = new_stock, 
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = p_product_id;
+    
+    COMMIT;
+    
+    -- 返回更新后的库存
+    SELECT new_stock AS updated_stock;
+END$$
+DELIMITER ;
+
+-- 清理过期购物车数据存储过程
+DROP PROCEDURE IF EXISTS `sp_clean_expired_cart`;
+DELIMITER $$
+CREATE PROCEDURE `sp_clean_expired_cart`(
+    IN p_days INT
+)
+BEGIN
+    DECLARE deleted_count INT DEFAULT 0;
+    DELETE FROM cart 
+    WHERE updated_at < DATE_SUB(NOW(), INTERVAL p_days DAY);
+    SET deleted_count = ROW_COUNT();
+    SELECT deleted_count AS deleted_count;
+END$$
+DELIMITER ;
+
+-- 获取商品库存统计存储过程
+DROP PROCEDURE IF EXISTS `sp_get_stock_statistics`;
+DELIMITER $$
+CREATE PROCEDURE `sp_get_stock_statistics`()
+BEGIN
+    SELECT 
+        COUNT(*) AS total_products,
+        SUM(stock) AS total_stock,
+        AVG(stock) AS avg_stock,
+        MIN(stock) AS min_stock,
+        MAX(stock) AS max_stock,
+        COUNT(CASE WHEN stock = 0 THEN 1 END) AS out_of_stock_count,
+        COUNT(CASE WHEN stock <= 10 THEN 1 END) AS low_stock_count
+    FROM product;
+END$$
+DELIMITER ;
+
+-- 获取用户购物车统计存储过程
+DROP PROCEDURE IF EXISTS `sp_get_cart_statistics`;
+DELIMITER $$
+CREATE PROCEDURE `sp_get_cart_statistics`()
+BEGIN
+    SELECT 
+        COUNT(DISTINCT user_id) AS active_users,
+        COUNT(*) AS total_cart_items,
+        SUM(quantity) AS total_quantity,
+        AVG(quantity) AS avg_quantity_per_item,
+        MAX(updated_at) AS last_activity_time
+    FROM cart;
+END$$
+DELIMITER ;
+
+-- =====================================================
+-- 5. 创建触发器
+-- =====================================================
+
+-- 商品库存变更日志触发器
+DROP TRIGGER IF EXISTS `tr_product_stock_update`;
+DELIMITER $$
+CREATE TRIGGER `tr_product_stock_update` 
+AFTER UPDATE ON `product`
+FOR EACH ROW
+BEGIN
+    IF OLD.stock != NEW.stock THEN
+        INSERT INTO product_stock_log (
+            product_id, 
+            old_stock, 
+            new_stock, 
+            change_amount, 
+            operation
+        ) VALUES (
+            NEW.product_id,
+            OLD.stock,
+            NEW.stock,
+            NEW.stock - OLD.stock,
+            CASE 
+                WHEN NEW.stock > OLD.stock THEN '增加'
+                ELSE '减少'
+            END
+        );
+    END IF;
+END$$
+DELIMITER ;
+
+-- 商品创建日志触发器
+DROP TRIGGER IF EXISTS `tr_product_insert`;
+DELIMITER $$
+CREATE TRIGGER `tr_product_insert` 
+AFTER INSERT ON `product`
+FOR EACH ROW
+BEGIN
+    INSERT INTO product_stock_log (
+        product_id, 
+        old_stock, 
+        new_stock, 
+        change_amount, 
+        operation
+    ) VALUES (
+        NEW.product_id,
+        0,
+        NEW.stock,
+        NEW.stock,
+        '初始化'
+    );
+END$$
+DELIMITER ;
+
+-- 购物车数据验证触发器
+DROP TRIGGER IF EXISTS `tr_cart_before_insert`;
+DELIMITER $$
+CREATE TRIGGER `tr_cart_before_insert` 
+BEFORE INSERT ON `cart`
+FOR EACH ROW
+BEGIN
+    -- 检查数量是否为正数
+    IF NEW.quantity <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '购物车商品数量必须大于0';
+    END IF;
+    
+    -- 检查商品是否存在
+    IF NOT EXISTS (SELECT 1 FROM product WHERE product_id = NEW.sku_id) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '商品不存在';
+    END IF;
+END$$
+DELIMITER ;
+
+-- 购物车更新验证触发器
+DROP TRIGGER IF EXISTS `tr_cart_before_update`;
+DELIMITER $$
+CREATE TRIGGER `tr_cart_before_update` 
+BEFORE UPDATE ON `cart`
+FOR EACH ROW
+BEGIN
+    -- 检查数量是否为正数
+    IF NEW.quantity <= 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '购物车商品数量必须大于0';
+    END IF;
+    
+    -- 检查商品是否存在
+    IF NOT EXISTS (SELECT 1 FROM product WHERE product_id = NEW.sku_id) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '商品不存在';
+    END IF;
+END$$
+DELIMITER ;
+
+-- =====================================================
+-- 6. 插入示例数据
+-- =====================================================
+
+-- 插入商品数据
+INSERT INTO `product` (`product_id`, `name`, `stock`) VALUES
+-- 手机类
+('P001', 'iPhone 15 Pro', 100),
+('P002', 'iPhone 15', 120),
+('P003', 'iPhone 14 Pro', 80),
+('P004', 'iPhone 14', 90),
+('P005', 'iPhone 13', 150),
+-- 电脑类
+('P006', 'MacBook Pro 14', 50),
+('P007', 'MacBook Pro 16', 30),
+('P008', 'MacBook Air M2', 80),
+('P009', 'MacBook Air M1', 60),
+('P010', 'iMac 24', 40),
+-- 平板类
+('P011', 'iPad Pro 12.9', 60),
+('P012', 'iPad Pro 11', 70),
+('P013', 'iPad Air', 75),
+('P014', 'iPad', 100),
+('P015', 'iPad mini', 85),
+-- 耳机类
+('P016', 'AirPods Pro', 200),
+('P017', 'AirPods Max', 90),
+('P018', 'AirPods 3', 150),
+('P019', 'AirPods 2', 120),
+('P020', 'Beats Studio Pro', 80),
+-- 手表类
+('P021', 'Apple Watch Series 9', 150),
+('P022', 'Apple Watch Series 8', 100),
+('P023', 'Apple Watch SE', 120),
+('P024', 'Apple Watch Ultra', 60),
+('P025', 'Apple Watch Ultra 2', 40),
+-- 其他设备
+('P026', 'Apple TV 4K', 110),
+('P027', 'HomePod mini', 95),
+('P028', 'HomePod', 70),
+('P029', 'Mac Studio', 25),
+('P030', 'Mac Pro', 15);
+
+-- 插入购物车数据
+INSERT INTO `cart` (`user_id`, `sku_id`, `quantity`) VALUES
+-- 用户U001的购物车
+('U001', 'P001', 2), ('U001', 'P016', 1), ('U001', 'P021', 1),
+-- 用户U002的购物车
+('U002', 'P006', 1), ('U002', 'P017', 1), ('U002', 'P011', 1),
+-- 用户U003的购物车
+('U003', 'P002', 1), ('U003', 'P013', 2), ('U003', 'P018', 1),
+-- 用户U004的购物车
+('U004', 'P008', 1), ('U004', 'P022', 1),
+-- 用户U005的购物车
+('U005', 'P003', 1), ('U005', 'P012', 1), ('U005', 'P019', 2),
+-- 用户U006的购物车
+('U006', 'P007', 1), ('U006', 'P024', 1), ('U006', 'P026', 1),
+-- 用户U007的购物车
+('U007', 'P004', 1), ('U007', 'P014', 1), ('U007', 'P023', 1),
+-- 用户U008的购物车
+('U008', 'P005', 1), ('U008', 'P015', 1), ('U008', 'P020', 1),
+-- 用户U009的购物车
+('U009', 'P009', 1), ('U009', 'P025', 1), ('U009', 'P027', 2),
+-- 用户U010的购物车
+('U010', 'P010', 1), ('U010', 'P028', 1), ('U010', 'P029', 1);
+
+-- 插入订单数据
+INSERT INTO `order` (`order_id`, `user_id`, `product_id`, `quantity`) VALUES
+('order1001', 'U001', 'P001', 1),
+('order1002', 'U002', 'P006', 1),
+('order1003', 'U003', 'P002', 1),
+('order1004', 'U004', 'P008', 1),
+('order1005', 'U005', 'P003', 1);
+
+-- =====================================================
+-- 7. 创建数据库用户
+-- =====================================================
+
+-- 创建应用用户（用于应用连接）
+DROP USER IF EXISTS 'ecommerce_app'@'%';
+CREATE USER 'ecommerce_app'@'%' IDENTIFIED BY 'Ecommerce@2024';
+GRANT SELECT, INSERT, UPDATE, DELETE ON nosql.* TO 'ecommerce_app'@'%';
+
+-- 创建只读用户（用于报表查询）
+DROP USER IF EXISTS 'ecommerce_readonly'@'%';
+CREATE USER 'ecommerce_readonly'@'%' IDENTIFIED BY 'Readonly@2024';
+GRANT SELECT ON nosql.* TO 'ecommerce_readonly'@'%';
+
+-- 创建管理员用户（用于数据库管理）
+DROP USER IF EXISTS 'ecommerce_admin'@'%';
+CREATE USER 'ecommerce_admin'@'%' IDENTIFIED BY 'Admin@2024';
+GRANT ALL PRIVILEGES ON nosql.* TO 'ecommerce_admin'@'%';
+
+-- 创建本地用户
+DROP USER IF EXISTS 'ecommerce_app'@'localhost';
+CREATE USER 'ecommerce_app'@'localhost' IDENTIFIED BY 'Ecommerce@2024';
+GRANT SELECT, INSERT, UPDATE, DELETE ON nosql.* TO 'ecommerce_app'@'localhost';
+
+DROP USER IF EXISTS 'ecommerce_readonly'@'localhost';
+CREATE USER 'ecommerce_readonly'@'localhost' IDENTIFIED BY 'Readonly@2024';
+GRANT SELECT ON nosql.* TO 'ecommerce_readonly'@'localhost';
+
+-- 刷新权限
+FLUSH PRIVILEGES;
+
+-- =====================================================
+-- 8. 验证安装结果
+-- =====================================================
+
+-- 显示所有表
+SELECT '创建的表：' AS info;
+SHOW TABLES;
+
+-- 显示所有视图
+SELECT '创建的视图：' AS info;
+SHOW FULL TABLES WHERE Table_type = 'VIEW';
+
+-- 显示所有存储过程
+SELECT '创建的存储过程：' AS info;
+SHOW PROCEDURE STATUS WHERE Db = 'nosql';
+
+-- 显示所有触发器
+SELECT '创建的触发器：' AS info;
+SHOW TRIGGERS;
+
+-- 显示数据统计
+SELECT '数据统计：' AS info;
+SELECT 
+    '商品表' AS table_name, 
+    COUNT(*) AS record_count 
+FROM product
+UNION ALL
+SELECT 
+    '购物车表' AS table_name, 
+    COUNT(*) AS record_count 
+FROM cart
+UNION ALL
+SELECT 
+    '库存日志表' AS table_name, 
+    COUNT(*) AS record_count 
+FROM product_stock_log
+UNION ALL
+SELECT 
+    '订单表' AS table_name, 
+    COUNT(*) AS record_count 
+FROM `order`;
+
+-- 显示用户
+SELECT '创建的用户：' AS info;
+SELECT 
+    User, 
+    Host 
+FROM mysql.user 
+WHERE User LIKE 'ecommerce%';
+
+-- =====================================================
+-- 9. 常用查询示例
+-- =====================================================
+
+-- 查询库存不足的商品
+SELECT '库存不足商品（<=10）：' AS query_type;
+SELECT product_id, name, stock 
+FROM product 
+WHERE stock <= 10 
+ORDER BY stock;
+
+-- 查询用户购物车统计
+SELECT '用户购物车统计：' AS query_type;
+SELECT 
+    user_id,
+    COUNT(sku_id) AS item_count,
+    SUM(quantity) AS total_quantity,
+    MAX(updated_at) AS last_updated
+FROM cart 
+GROUP BY user_id 
+ORDER BY total_quantity DESC;
+
+-- 查询热门商品
+SELECT '热门商品TOP10：' AS query_type;
+SELECT 
+    sku_id,
+    COUNT(DISTINCT user_id) AS user_count,
+    SUM(quantity) AS total_quantity,
+    AVG(quantity) AS avg_quantity
+FROM cart 
+GROUP BY sku_id 
+ORDER BY user_count DESC, total_quantity DESC 
+LIMIT 10;
+
+-- 查询库存变更记录
+SELECT '最近库存变更记录：' AS query_type;
+SELECT 
+    product_id,
+    old_stock,
+    new_stock,
+    change_amount,
+    operation,
+    created_at
+FROM product_stock_log 
+ORDER BY created_at DESC 
+LIMIT 10;
+
+-- =====================================================
+-- 10. 安装完成
+-- =====================================================
+SET FOREIGN_KEY_CHECKS = 1;
+
+SELECT '==============================================' AS info;
+SELECT '电商系统数据库安装完成！' AS final_message;
+SELECT '==============================================' AS info;
+
+SELECT '数据库连接信息：' AS info;
+SELECT '数据库名：nosql' AS connection_info;
+SELECT '应用用户：ecommerce_app' AS connection_info;
+SELECT '应用密码：Ecommerce@2024' AS connection_info;
+SELECT '只读用户：ecommerce_readonly' AS connection_info;
+SELECT '只读密码：Readonly@2024' AS connection_info;
+
+SELECT '下一步：' AS next_step;
+SELECT '1. 修改应用配置文件中的数据库连接信息' AS todo;
+SELECT '2. 启动Spring Boot应用' AS todo;
+SELECT '3. 运行测试查询验证功能' AS todo;

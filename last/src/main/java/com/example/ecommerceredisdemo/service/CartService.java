@@ -69,6 +69,154 @@ public class CartService {
     }
 
     /**
+     * 清空用户购物车
+     * @param userId 用户ID
+     * @return 是否成功清空
+     */
+    public Boolean clearCart(String userId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Boolean result = redisTemplate.delete(cartKey);
+        log.info("用户 {} 购物车已清空", userId);
+        return result;
+    }
+
+    /**
+     * 批量添加商品到购物车
+     * @param userId 用户ID
+     * @param items Map<skuId, quantity>
+     * @return 添加的商品数量
+     */
+    public Integer batchAddItems(String userId, Map<String, Integer> items) {
+        if (items == null || items.isEmpty()) {
+            return 0;
+        }
+
+        String cartKey = CART_PREFIX + userId + ":cart";
+        int addedCount = 0;
+
+        for (Map.Entry<String, Integer> entry : items.entrySet()) {
+            String skuId = entry.getKey();
+            Integer quantity = entry.getValue();
+            
+            if (quantity > 0) {
+                redisTemplate.opsForHash().increment(cartKey, skuId, quantity);
+                addedCount++;
+            }
+        }
+
+        log.info("用户 {} 批量添加 {} 个商品到购物车", userId, addedCount);
+        return addedCount;
+    }
+
+    /**
+     * 批量移除购物车中的商品
+     * @param userId 用户ID
+     * @param skuIds 商品SKU ID列表
+     * @return 成功移除的商品数量
+     */
+    public Integer batchRemoveItems(String userId, List<String> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return 0;
+        }
+
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Long removedCount = redisTemplate.opsForHash().delete(cartKey, skuIds.toArray());
+        
+        log.info("用户 {} 批量移除 {} 个商品", userId, removedCount);
+        return removedCount.intValue();
+    }
+
+    /**
+     * 获取购物车商品总数
+     * @param userId 用户ID
+     * @return 商品总数
+     */
+    public Integer getCartItemCount(String userId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Long count = redisTemplate.opsForHash().size(cartKey);
+        return count != null ? count.intValue() : 0;
+    }
+
+    /**
+     * 获取购物车商品总数量（所有商品数量之和）
+     * @param userId 用户ID
+     * @return 商品总数量
+     */
+    public Integer getCartTotalQuantity(String userId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Map<Object, Object> cartItems = redisTemplate.opsForHash().entries(cartKey);
+        
+        return cartItems.values().stream()
+                .mapToInt(item -> (Integer) item)
+                .sum();
+    }
+
+    /**
+     * 检查商品是否在购物车中
+     * @param userId 用户ID
+     * @param skuId 商品SKU ID
+     * @return 是否在购物车中
+     */
+    public Boolean isItemInCart(String userId, String skuId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        return redisTemplate.opsForHash().hasKey(cartKey, skuId);
+    }
+
+    /**
+     * 获取购物车中指定商品的数量
+     * @param userId 用户ID
+     * @param skuId 商品SKU ID
+     * @return 商品数量，如果不存在返回0
+     */
+    public Integer getItemQuantity(String userId, String skuId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Object quantity = redisTemplate.opsForHash().get(cartKey, skuId);
+        return quantity != null ? (Integer) quantity : 0;
+    }
+
+    /**
+     * 设置购物车中商品的数量（覆盖原有数量）
+     * @param userId 用户ID
+     * @param skuId 商品SKU ID
+     * @param quantity 新数量
+     * @return 设置后的数量
+     */
+    public Integer setItemQuantity(String userId, String skuId, int quantity) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        
+        if (quantity <= 0) {
+            // 数量为0或负数，从购物车移除
+            redisTemplate.opsForHash().delete(cartKey, skuId);
+            log.info("用户 {} 购物车商品 {} 数量设为0，已移除", userId, skuId);
+            return 0;
+        } else {
+            // 设置新数量
+            redisTemplate.opsForHash().put(cartKey, skuId, quantity);
+            log.info("用户 {} 购物车商品 {} 数量设置为 {}", userId, skuId, quantity);
+            return quantity;
+        }
+    }
+
+    /**
+     * 获取购物车统计信息
+     * @param userId 用户ID
+     * @return 统计信息
+     */
+    public Map<String, Object> getCartStats(String userId) {
+        String cartKey = CART_PREFIX + userId + ":cart";
+        Map<Object, Object> cartItems = redisTemplate.opsForHash().entries(cartKey);
+        
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("itemCount", cartItems.size()); // 商品种类数
+        stats.put("totalQuantity", cartItems.values().stream()
+                .mapToInt(item -> (Integer) item)
+                .sum()); // 商品总数量
+        stats.put("isEmpty", cartItems.isEmpty());
+        
+        return stats;
+    }
+
+    /**
      * 定时任务：将 Redis 购物车数据同步到 MySQL
      * 实际应用中可能需要更复杂的冲突解决和批量处理逻辑
      */
